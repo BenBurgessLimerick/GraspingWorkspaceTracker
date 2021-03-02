@@ -86,7 +86,7 @@ class WorkspaceTracker(object):
             movement += numpy.linalg.norm(r.center - self.corner_locations[corner_id])
             self.corner_locations[corner_id] = r.center
         # print movement
-        if movement > 20 and len(detections) != 4:
+        if (movement > 20 and len(detections) != 4) or len(detections) < 2:
             return
         pts_src = numpy.array(self.corner_locations)
 
@@ -94,7 +94,7 @@ class WorkspaceTracker(object):
         trans_image = cv2.warpPerspective(image, h, self.output_shape)
     
         # Should remove the white background. Will need to do this better
-        trans_image[numpy.min(trans_image, axis=2) > 100] = 0
+        # trans_image[numpy.min(trans_image, axis=2) > 100] = 0
         show_image(trans_image)
 
 if __name__ == '__main__':
