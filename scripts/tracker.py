@@ -49,29 +49,23 @@ class WorkspaceTracker(object):
             6: 2,
             4: 3
         }
-        x_sep = 0.22
-        y_sep = 0.15
+        x_length = 0.22
+        y_length = 0.15
 
         self.px_per_m = 5000
-        x_sep = int(x_sep * self.px_per_m)
-        y_sep = int(y_sep * self.px_per_m)
+        xPix = int(x_length * self.px_per_m)
+        yPix = int(y_length * self.px_per_m)
 
         self.pts_dst = numpy.array([
             [0, 0],
-            [x_sep, 0],
-            [0, y_sep],
-            [x_sep, y_sep]]
+            [xPix, 0],
+            [0, yPix],
+            [xPix, yPix]]
         )
 
-        self.output_shape = (self.pts_dst[3, 0], self.pts_dst[3, 1])
         offset = int(0.015 * self.px_per_m)
-        self.pts_dst += numpy.array([
-            [offset, offset],
-            [-offset, offset],
-            [offset, -offset],
-            [-offset, -offset]
-        ])
-        
+        self.output_shape = (xPix + 2 * offset, yPix + 2 * offset)
+        self.pts_dst += offset
 
         self.corner_locations = numpy.ones((4, 2), numpy.float32)
         self.corner_locations[:] = numpy.nan
