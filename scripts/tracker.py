@@ -1,8 +1,12 @@
 #!/usr/bin/env python
 import rospy
-from sensor_msgs.msg import Image, CameraInfo, PointCloud2
-import sensor_msgs.point_cloud2 as pcl2
-from apriltag_ros.msg import AprilTagDetectionArray
+from sensor_msgs.msg import Image, CameraInfo
+
+DEBUG = False
+if DEBUG:
+    from sensor_msgs.msg import PointCloud2
+    import sensor_msgs.point_cloud2 as pcl2
+
 import std_msgs.msg
 
 import apriltag
@@ -42,11 +46,12 @@ def draw_detections_on_image(detections, image):
     return image
 
 class WorkspaceTracker(object):
-    def __init__(self):
+    def __init__(self, tag_size=0.03, x_length=0.225, y_length=0.14):
         self.bridge = CvBridge()
         options = apriltag.DetectorOptions(families="tag16h5")
         self.detector = apriltag.Detector(options)
 
+        # TODO: This needs to map from tag ids to corner locations. Should probably learn it on first image rather than specify
         self.corner_ids = {
             7: 0,
             5: 1,
@@ -54,19 +59,19 @@ class WorkspaceTracker(object):
             4: 3
         }
 
-        self.tag_size = 0.03
-        x_length = 0.225
-        y_length = 0.14
+        self.tag_size = tag_size
+        self.x_length = x_length
+        self.y_length = y_length
 
         self.px_per_m = 5000
-        xPix = int(x_length * self.px_per_m)
-        yPix = int(y_length * self.px_per_m)
+        xPix = int(self.x_length * self.px_per_m)
+        yPix = int(self.y_length * self.px_per_m)
 
         self.corner_coords = numpy.array([
-            [-x_length/2, -y_length/2, 0],
-            [x_length/2, -y_length/2, 0], 
-            [-x_length/2, y_length/2, 0], 
-            [x_length/2, y_length/2, 0]
+            [-self.x_length/2, -self.y_length/2, 0],
+            [self.x_length/2, -self.y_length/2, 0], 
+            [-self.x_length/2, self.y_length/2, 0], 
+            [self.x_length/2, self.y_length/2, 0]
         ])
 
         self.pts_dst = numpy.array([
@@ -86,10 +91,13 @@ class WorkspaceTracker(object):
         self.corner_positions = numpy.empty((4, 3), numpy.float32)
         self.corner_positions[:] = numpy.nan
 
-        self.pc_pub = rospy.Publisher("/test_cloud", PointCloud2, queue_size=10)
-        self.pc_pub2 = rospy.Publisher("/test_cloud2", PointCloud2, queue_size=10)
+        if DEBUG:
+            self.pc_pub = rospy.Publisher("/test_cloud", PointCloud2, queue_size=10)
+            self.pc_pub2 = rospy.Publisher("/test_cloud2", PointCloud2, queue_size=10)
 
         self.tf_broadcaster = tf2_ros.TransformBroadcaster()
+
+        self.transformed_workspace_pub = rospy.Publisher('transformed_workspace', Image, queue_size=10)
 
         self.camera_params = None
 
@@ -104,8 +112,6 @@ class WorkspaceTracker(object):
 
         # Note that old detections are retained 
         movement = 0
-
-
 
         for r in detections:
             if r.tag_id not in self.corner_ids:
@@ -130,10 +136,12 @@ class WorkspaceTracker(object):
 
         image = draw_detections_on_image(detections, image)
         trans_image = cv2.warpPerspective(image, h, self.output_shape)
-    
+
+        self.transformed_workspace_pub.publish(self.bridge.cv2_to_imgmsg(trans_image))
         # Should remove the white background. Will need to do this better
         # trans_image[numpy.sum(trans_image, axis=2) > 300] = 0
-        show_image(trans_image)
+        if DEBUG:
+            show_image(trans_image)
 
         if self.camera_params and not numpy.any(numpy.isnan(self.corner_positions)):
 
@@ -167,16 +175,19 @@ class WorkspaceTracker(object):
             self.tf_broadcaster.sendTransform(trans)
 
 
-            header = std_msgs.msg.Header()
-            header.stamp = rospy.Time.now()
-            header.frame_id = "camera_color_optical_frame"
             
-            pc = pcl2.create_cloud_xyz32(header, self.corner_positions)
-            self.pc_pub.publish(pc)
+            
+            if DEBUG:
+                header = std_msgs.msg.Header()
+                header.stamp = rospy.Time.now()
+                header.frame_id = "camera_color_optical_frame"
+                
+                pc = pcl2.create_cloud_xyz32(header, self.corner_positions)
+                self.pc_pub.publish(pc)
 
-            trans_points = numpy.dot(R, self.corner_coords.T).T + t
-            pc = pcl2.create_cloud_xyz32(header, trans_points)
-            self.pc_pub2.publish(pc)
+                trans_points = numpy.dot(R, self.corner_coords.T).T + t
+                pc = pcl2.create_cloud_xyz32(header, trans_points)
+                self.pc_pub2.publish(pc)
 
     def new_camera_info(self, data):
         fx, _, cx, _, fy, cy, _, _, _ = data.K
